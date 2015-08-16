@@ -1,0 +1,11 @@
+---
+title: "Weight Lifting Exercise Prediction"
+subtitle: "Practicle Machine Learning Course Project"
+author: "Brian Gulbis"
+date: "August 16, 2015"
+output: 
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
+---
+
