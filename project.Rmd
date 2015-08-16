@@ -9,3 +9,30 @@ output:
     keep_md: yes
 ---
 
+```{r}
+library(dplyr)
+library(lubridate)
+library(caret)
+```
+
+
+```{r warning=FALSE}
+train <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
+    mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
+           user_name = factor(user_name),
+           new_window = factor(new_window),
+           classe = factor(classe)) %>%
+    rename(max_pitch_belt = max_picth_belt,
+           kurtosis_pitch_belt = kurtosis_picth_belt,
+           kurtosis_pitch_arm = kurtosis_picth_arm,
+           max_pitch_arm = max_picth_arm,
+           max_pitch_dumbbell = max_picth_dumbbell,
+           kurtosis_pitch_forearm = kurtosis_picth_forearm,
+           max_pitch_forearm = max_picth_forearm) %>%
+    mutate_each(funs(as.numeric), kurtosis_roll_belt:magnet_forearm_z)
+```
+
+```{r}
+
+```
+
