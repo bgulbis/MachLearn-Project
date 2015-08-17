@@ -17,7 +17,7 @@ library(caret)
 
 
 ```{r warning=FALSE}
-train <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
+training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
            user_name = factor(user_name),
            new_window = factor(new_window),
@@ -32,7 +32,11 @@ train <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate_each(funs(as.numeric), kurtosis_roll_belt:magnet_forearm_z)
 ```
 
-```{r}
-
+```{r warning=FALSE}
+near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+nz <- training[,near.zero$zeroVar == FALSE]
+preProc <- preProcess(nz[,8:150], method="pca", pcaComp=5)
+trainPCA <- predict(preProc, nz[,8:150])
+modelFit <- train(training$classe ~ ., method="glm", data=trainPCA)
 ```
 
