@@ -54,7 +54,7 @@ K-folds
 ```{r}
 folds <- createFolds(y=training$classe)
 
-near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+near.zero <- nearZeroVar(training[,8:159], saveMetrics = TRUE)
 nz <- training[,near.zero$zeroVar == FALSE]
 
 ```
@@ -66,7 +66,7 @@ modelGLM <- train(classe ~ ., method="glm", data=nz[8:151], trControl=trainContr
 ```{r}
 library(rpart)
 modelTree <- train(classe ~ ., method="rpart", data=nz[,8:151], trControl=trainControl("repeatedcv"))
-predTree <- predict(modelTree, testing)
+predTree <- predict(modelTree, testing[,near.zero$zeroVar == FALSE])
 ```
 
 ```{r}
