@@ -32,6 +32,18 @@ training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate_each(funs(as.numeric), kurtosis_roll_belt:magnet_forearm_z)
 ```
 
+```{r}
+library(rpart)
+near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+nz <- training[,near.zero$zeroVar == FALSE]
+modelTree <- train(classe ~ ., method="rpart", data=nz[,8:151])
+```
+
+```{r}
+modelRF <- train(classe ~ ., method="rf", data=nz[,8:151])
+```
+
+
 ```{r warning=FALSE}
 near.zero <- nearZeroVar(training, saveMetrics = TRUE)
 nz <- training[,near.zero$zeroVar == FALSE]
