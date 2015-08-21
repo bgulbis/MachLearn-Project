@@ -13,6 +13,9 @@ output:
 library(dplyr)
 library(lubridate)
 library(caret)
+
+library(doParallel)
+registerDoParallel(cores=4)
 ```
 
 
@@ -29,14 +32,41 @@ training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
            max_pitch_dumbbell = max_picth_dumbbell,
            kurtosis_pitch_forearm = kurtosis_picth_forearm,
            max_pitch_forearm = max_picth_forearm) %>%
-    mutate_each(funs(as.numeric), kurtosis_roll_belt:magnet_forearm_z)
+    mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
+
+testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
+    mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
+           user_name = factor(user_name),
+           new_window = factor(new_window)) %>%
+    rename(max_pitch_belt = max_picth_belt,
+           kurtosis_pitch_belt = kurtosis_picth_belt,
+           kurtosis_pitch_arm = kurtosis_picth_arm,
+           max_pitch_arm = max_picth_arm,
+           max_pitch_dumbbell = max_picth_dumbbell,
+           kurtosis_pitch_forearm = kurtosis_picth_forearm,
+           max_pitch_forearm = max_picth_forearm) %>%
+    mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
+    
+```
+
+K-folds
+
+```{r}
+folds <- createFolds(y=training$classe)
+
+near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+nz <- training[,near.zero$zeroVar == FALSE]
+
+```
+
+```{r}
+modelGLM <- train(classe ~ ., method="glm", data=nz[8:151], trControl=trainControl("repeatedcv"))
 ```
 
 ```{r}
 library(rpart)
-near.zero <- nearZeroVar(training, saveMetrics = TRUE)
-nz <- training[,near.zero$zeroVar == FALSE]
-modelTree <- train(classe ~ ., method="rpart", data=nz[,8:151])
+modelTree <- train(classe ~ ., method="rpart", data=nz[,8:151], trControl=trainControl("repeatedcv"))
+predTree <- predict(modelTree, testing)
 ```
 
 ```{r}
