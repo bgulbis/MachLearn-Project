@@ -15,7 +15,9 @@ library(lubridate)
 library(caret)
 
 library(doParallel)
-registerDoParallel(cores=4)
+if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
+    registerDoParallel(cores=4)
+}
 ```
 
 
@@ -49,28 +51,88 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
     
 ```
 
-K-folds
+Exploratory Analysis
 
 ```{r}
-folds <- createFolds(y=training$classe)
+summary(training)
 
-near.zero <- nearZeroVar(training[,8:159], saveMetrics = TRUE)
-nz <- training[,near.zero$zeroVar == FALSE]
+featurePlot(x=training[,c("avg_roll_belt","var_roll_belt")], y=training$classe, plot="pairs")
+
+qplot(var_roll_belt, classe, data=training)
 
 ```
 
+Potential features to include (from authors)
+
+* Belt
+  * mean and variance of roll: avg\_roll\_belt, var\_roll\_belt
+  * maximum, range, and variance of accelerometer: var\_total\_accel\_belt (?)
+  * variance of gyro
+  * variance of magnetometer
+* Arm
+  * variance of accelerometer
+  * maximum and minimum of magnetometer
+* Dumbbell
+  * maximum of accelerometer
+  * variance of gyro
+  * maximum and minimum of magnetometer
+* Forearm
+  * sum of pitch: pitch\_forearm
+  * maximum and minimum of gyro
+
 ```{r}
-modelGLM <- train(classe ~ ., method="glm", data=nz[8:151], trControl=trainControl("repeatedcv"))
+
+
+```
+
+
+Near Zero Frequency
+
+```{r}
+#folds <- createFolds(y=training$classe)
+
+#near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+trainFtr <- select(training, -(X:new_window), -classe)
+nzv <- nearZeroVar(trainFtr)
+fltr.nz <- trainFtr[, -nzv]
+
+```
+
+Correlated Predictors
+
+```{r}
+corPred <- cor(fltr.nz, use="complete.obs")
+highCor <- findCorrelation(corPred, cutoff = 0.8)
+fltr.cor <- fltr.nz[, -highCor]
+#highCor <- abs(cor.pred[upper.tri(cor.pred)]) > 0.9
+#sum(highCor)
+#summary(cor.pred[upper.tri(cor.pred)])
+
+```
+
+Center and Scale; Impute
+
+```{r}
+set.seed(1235)
+#preProc <- preProcess(fltr.cor, method=c("center", "scale"))
+preProc <- preProcess(fltr.cor, method=c("knnImpute"))
+train.preproc <- predict(preProc, fltr.cor)
+train.preproc$classe <- training$classe
+```
+
+
+```{r}
+modelGLM <- train(classe ~ ., method="glm", data=train.preproc)
 ```
 
 ```{r}
 library(rpart)
-modelTree <- train(classe ~ ., method="rpart", data=nz[,8:151], trControl=trainControl("repeatedcv"))
+modelTree <- train(classe ~ ., method="rpart", data=, trControl=trainControl("repeatedcv"))
 predTree <- predict(modelTree, testing[,near.zero$zeroVar == FALSE])
 ```
 
 ```{r}
-modelRF <- train(classe ~ ., method="rf", data=nz[,8:151])
+modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trainControl("repeatedcv"))
 ```
 
 
