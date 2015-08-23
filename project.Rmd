@@ -10,6 +10,7 @@ output:
 ---
 
 ```{r}
+library(plyr)
 library(dplyr)
 library(lubridate)
 library(caret)
@@ -122,25 +123,44 @@ train.preproc$classe <- training$classe
 
 
 ```{r}
-modelGLM <- train(classe ~ ., method="glm", data=train.preproc)
+myseeds <- list(c(123,234,345), c(456,567,678), c(789,890,901), c(987,876,765), c(654,543,432), c(321,210,109), c(135,246,357), c(468,579,680), c(791,802,913), c(975,864,753), 54321) 
 ```
 
 ```{r}
+#modelGLM <- train(classe ~ ., method="glm", data=train.preproc)
 library(rpart)
-modelTree <- train(classe ~ ., method="rpart", data=, trControl=trainControl("repeatedcv"))
-predTree <- predict(modelTree, testing[,near.zero$zeroVar == FALSE])
+trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
+modelCART <- train(classe ~ ., method="rpart", data=train.preproc, trControl=trCtrl)
+
 ```
 
+Random Forest
+
 ```{r}
-modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trainControl("repeatedcv"))
+#myseeds <- list() length 11, 10 integer vectors of size 3
+trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
+modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trCtrl)
+```
+
+Boosting
+
+```{r}
+modelGBM <- train(classe ~ ., method="gbm", data=train.preproc, verbose=FALSE)
+```
+
+LDA
+
+```{r}
+#trCtrl <- trainControl(method="repeatedcv")
+modelLDA <- train(classe ~ ., method="lda", data=train.preproc, trControl=trCtrl)
 ```
 
 
 ```{r warning=FALSE}
-near.zero <- nearZeroVar(training, saveMetrics = TRUE)
-nz <- training[,near.zero$zeroVar == FALSE]
-preProc <- preProcess(nz[,8:150], method="pca", pcaComp=5)
-trainPCA <- predict(preProc, nz[,8:150])
-modelFit <- train(training$classe ~ ., method="glm", data=trainPCA)
+#near.zero <- nearZeroVar(training, saveMetrics = TRUE)
+#nz <- training[,near.zero$zeroVar == FALSE]
+#preProc <- preProcess(nz[,8:150], method="pca", pcaComp=5)
+#trainPCA <- predict(preProc, nz[,8:150])
+#modelFit <- train(training$classe ~ ., method="glm", data=trainPCA)
 ```
 
