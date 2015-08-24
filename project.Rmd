@@ -9,20 +9,15 @@ output:
     keep_md: yes
 ---
 
-```{r}
+```{r echo=FALSE}
 library(plyr)
 library(dplyr)
 library(lubridate)
 library(caret)
-
-library(doParallel)
-if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
-    registerDoParallel(cores=4)
-}
 ```
 
 
-```{r warning=FALSE}
+```{r echo=FALSE, warning=FALSE}
 training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
            user_name = factor(user_name),
@@ -52,7 +47,23 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
     
 ```
 
-Exploratory Analysis
+```{r}
+library(doParallel)
+if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
+    registerDoParallel()
+}
+```
+
+
+## Create Validation Partition
+
+```{r}
+inValid <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+train.set <- training[inValid,]
+valid.set <- training[-inValid,]
+```
+
+## Exploratory Analysis
 
 ```{r}
 summary(training)
@@ -93,10 +104,9 @@ Near Zero Frequency
 #folds <- createFolds(y=training$classe)
 
 #near.zero <- nearZeroVar(training, saveMetrics = TRUE)
-trainFtr <- select(training, -(X:new_window), -classe)
+trainFtr <- select(train.set, -(X:new_window), -classe)
 nzv <- nearZeroVar(trainFtr)
 fltr.nz <- trainFtr[, -nzv]
-
 ```
 
 Correlated Predictors
@@ -118,7 +128,27 @@ set.seed(1235)
 #preProc <- preProcess(fltr.cor, method=c("center", "scale"))
 preProc <- preProcess(fltr.cor, method=c("knnImpute"))
 train.preproc <- predict(preProc, fltr.cor)
-train.preproc$classe <- training$classe
+train.preproc$classe <- train.set$classe
+```
+
+Prep Training Validation Set
+
+```{r}
+validate <- select(valid.set, -(X:new_window), -classe)
+validate <- validate[, -nzv]
+validate <- validate[, -highCor]
+validate <- predict(preProc, validate)
+validate$classe <- valid.set$classe
+```
+
+Prep Final Test Set
+
+```{r}
+test <- select(testing, -(X:new_window))
+test <- test[, -nzv]
+test <- test[, -highCor]
+test <- predict(preProc, test)
+#test$classe <- valid.set$classe
 ```
 
 
@@ -127,33 +157,76 @@ myseeds <- list(c(123,234,345), c(456,567,678), c(789,890,901), c(987,876,765), 
 ```
 
 ```{r}
-#modelGLM <- train(classe ~ ., method="glm", data=train.preproc)
 library(rpart)
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
+#modelGLM <- train(classe ~ ., method="glm", data=train.preproc, trControl=trCtrl)
 modelCART <- train(classe ~ ., method="rpart", data=train.preproc, trControl=trCtrl)
 
 ```
 
 Random Forest
 
-```{r}
+```{r cache=TRUE}
 #myseeds <- list() length 11, 10 integer vectors of size 3
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
-modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trCtrl)
+
+modelRF.save <- "modelRF.Rds"
+
+if (file.exists(modelRF.save)) {
+    # Read the model in and assign it to a variable.
+    library(randomForest)
+    modelRF <- readRDS(modelRF.save)
+} else {
+    # Otherwise, run the training.
+    modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trCtrl)
+    saveRDS(modelRF, modelRF.save)
+}
+
 ```
 
 Boosting
 
 ```{r}
-modelGBM <- train(classe ~ ., method="gbm", data=train.preproc, verbose=FALSE)
+modelGBM.save <- "modelGBM.Rds"
+
+if (file.exists(modelGBM.save)) {
+    # Read the model in and assign it to a variable.
+    library(gbm)
+    modelGBM <- readRDS(modelGBM.save)
+} else {
+    # Otherwise, run the training.
+    modelGBM <- train(classe ~ ., method="gbm", data=train.preproc, verbose=FALSE, trControl=trCtrl)
+    saveRDS(modelGBM, modelGBM.save)
+}
+
 ```
 
 LDA
 
 ```{r}
-#trCtrl <- trainControl(method="repeatedcv")
-modelLDA <- train(classe ~ ., method="lda", data=train.preproc, trControl=trCtrl)
+modelLDA.save <- "modelLDA.Rds"
+
+if (file.exists(modelLDA.save)) {
+    # Read the model in and assign it to a variable.
+    #library(gbm)
+    modelLDA <- readRDS(modelLDA.save)
+} else {
+    # Otherwise, run the training.
+    modelLDA <- train(classe ~ ., method="lda", data=train.preproc, trControl=trCtrl)
+    saveRDS(modelLDA, modelLDA.save)
+}
 ```
+
+Prediction
+
+```{r}
+predRF <- predict(modelRF, validate)
+cmRF <- confusionMatrix(predRF, validate$classe)
+
+predCART <- -predict(modelCART, validate)
+cmCART <- confusionMatrix(predCART, validate$classe)
+```
+
 
 
 ```{r warning=FALSE}
