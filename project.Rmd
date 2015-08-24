@@ -50,7 +50,7 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
 ```{r}
 library(doParallel)
 if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
-    registerDoParallel()
+    registerDoParallel(core=4)
 }
 ```
 
@@ -144,9 +144,10 @@ validate$classe <- valid.set$classe
 Prep Final Test Set
 
 ```{r}
-test <- select(testing, -(X:new_window))
+test <- dplyr::select(testing, -(X:new_window), -problem_id)
 test <- test[, -nzv]
 test <- test[, -highCor]
+#test$classe <- NA
 test <- predict(preProc, test)
 #test$classe <- valid.set$classe
 ```
@@ -223,10 +224,24 @@ Prediction
 predRF <- predict(modelRF, validate)
 cmRF <- confusionMatrix(predRF, validate$classe)
 
-predCART <- -predict(modelCART, validate)
-cmCART <- confusionMatrix(predCART, validate$classe)
+predGBM <- predict(modelGBM, validate)
+cmGBM <- confusionMatrix(predGBM, validate$classe)
+
+predLDA <- predict(modelLDA, validate)
+cmLDA <- confusionMatrix(predLDA, validate$classe)
+#predCART <- -predict(modelCART, validate)
+#cmCART <- confusionMatrix(predCART, validate$classe)
 ```
 
+Stacked Models
+
+```{r}
+predDF <- data.frame(predRF, predGBM, classe=validate$classe)
+mod.comb <- train(classe ~ ., data=predDF, method="rf")
+pred.comb <- predict(mod.comb, validate)
+confusionMatrix(pred.comb, validate$classe)
+
+```
 
 
 ```{r warning=FALSE}
@@ -235,5 +250,24 @@ cmCART <- confusionMatrix(predCART, validate$classe)
 #preProc <- preProcess(nz[,8:150], method="pca", pcaComp=5)
 #trainPCA <- predict(preProc, nz[,8:150])
 #modelFit <- train(training$classe ~ ., method="glm", data=trainPCA)
+```
+
+Predict Testing Set
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+```{r}
+predTest <- predict(modelRF, test)
+answer <- as.character(predTest)
+pml_write_files(answer)
+saveRDS(predTest, "test_predictions.Rds")
 ```
 
