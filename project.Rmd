@@ -2,7 +2,7 @@
 title: "Weight Lifting Exercise Prediction"
 subtitle: "Practicle Machine Learning Course Project"
 author: "Brian Gulbis"
-date: "August 16, 2015"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
   html_document: 
     fig_caption: yes
@@ -16,8 +16,14 @@ library(lubridate)
 library(caret)
 ```
 
+```{r echo=FALSE}
+library(doParallel)
+if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
+    registerDoParallel(core=4)
+}
+```
 
-```{r echo=FALSE, warning=FALSE}
+```{r warning=FALSE}
 training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
            user_name = factor(user_name),
@@ -44,33 +50,24 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
            kurtosis_pitch_forearm = kurtosis_picth_forearm,
            max_pitch_forearm = max_picth_forearm) %>%
     mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
-    
 ```
-
-```{r}
-library(doParallel)
-if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
-    registerDoParallel(core=4)
-}
-```
-
 
 ## Create Validation Partition
 
 ```{r}
-inValid <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
-train.set <- training[inValid,]
-valid.set <- training[-inValid,]
+inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+train.data <- training[inTrain,]
+valid.data <- training[-inTrain,]
 ```
 
 ## Exploratory Analysis
 
 ```{r}
-summary(training)
+#summary(training)
 
-featurePlot(x=training[,c("avg_roll_belt","var_roll_belt")], y=training$classe, plot="pairs")
+#featurePlot(x=training[,c("avg_roll_belt","var_roll_belt")], y=training$classe, plot="pairs")
 
-qplot(var_roll_belt, classe, data=training)
+#qplot(var_roll_belt, classe, data=training)
 
 ```
 
@@ -92,83 +89,67 @@ Potential features to include (from authors)
   * sum of pitch: pitch\_forearm
   * maximum and minimum of gyro
 
-```{r}
 
+## Near Zero Frequency
 
-```
-
-
-Near Zero Frequency
+Remove near-zero variables
 
 ```{r}
-#folds <- createFolds(y=training$classe)
-
-#near.zero <- nearZeroVar(training, saveMetrics = TRUE)
-trainFtr <- select(train.set, -(X:new_window), -classe)
-nzv <- nearZeroVar(trainFtr)
-fltr.nz <- trainFtr[, -nzv]
+train.set <- select(train.data, -(X:new_window), -classe)
+near.zero <- nearZeroVar(train.set)
+train.set <- train.set[, -near.zero]
 ```
 
-Correlated Predictors
+## Find Highly-Correlated Predictors
+
+Find highly-correlated predictors and remove
 
 ```{r}
-corPred <- cor(fltr.nz, use="complete.obs")
-highCor <- findCorrelation(corPred, cutoff = 0.8)
-fltr.cor <- fltr.nz[, -highCor]
-#highCor <- abs(cor.pred[upper.tri(cor.pred)]) > 0.9
-#sum(highCor)
-#summary(cor.pred[upper.tri(cor.pred)])
-
+train.cor <- cor(train.set, use="complete.obs")
+high.cor <- findCorrelation(train.cor, cutoff = 0.8)
+train.set <- train.set[, -high.cor]
 ```
 
-Center and Scale; Impute
+## Center and Scale; Impute Missing Values
+
+Use k-nearest neighbor to impute missing values
 
 ```{r}
 set.seed(1235)
-#preProc <- preProcess(fltr.cor, method=c("center", "scale"))
-preProc <- preProcess(fltr.cor, method=c("knnImpute"))
-train.preproc <- predict(preProc, fltr.cor)
-train.preproc$classe <- train.set$classe
+pre.proc <- preProcess(train.set, method=c("knnImpute"))
+train.set <- predict(pre.proc, train.set)
+train.set$classe <- train.data$classe
 ```
 
-Prep Training Validation Set
+## Prep Training Validation Set
 
 ```{r}
-validate <- select(valid.set, -(X:new_window), -classe)
-validate <- validate[, -nzv]
-validate <- validate[, -highCor]
-validate <- predict(preProc, validate)
-validate$classe <- valid.set$classe
+valid.set <- select(valid.data, -(X:new_window), -classe)
+valid.set <- valid.set[, -near.zero]
+valid.set <- valid.set[, -high.cor]
+valid.set <- predict(pre.proc, valid.set)
+valid.set$classe <- valid.data$classe
 ```
 
-Prep Final Test Set
+## Prep Final Test Set
 
 ```{r}
-test <- dplyr::select(testing, -(X:new_window), -problem_id)
-test <- test[, -nzv]
-test <- test[, -highCor]
-#test$classe <- NA
-test <- predict(preProc, test)
-#test$classe <- valid.set$classe
+test.set <- dplyr::select(testing, -(X:new_window), -problem_id)
+test.set <- test.set[, -near.zero]
+test.set <- test.set[, -high.cor]
+test.set <- predict(pre.proc, test.set)
 ```
 
 
-```{r}
+```{r echo=FALSE}
 myseeds <- list(c(123,234,345), c(456,567,678), c(789,890,901), c(987,876,765), c(654,543,432), c(321,210,109), c(135,246,357), c(468,579,680), c(791,802,913), c(975,864,753), 54321) 
 ```
 
-```{r}
-library(rpart)
-trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
-#modelGLM <- train(classe ~ ., method="glm", data=train.preproc, trControl=trCtrl)
-modelCART <- train(classe ~ ., method="rpart", data=train.preproc, trControl=trCtrl)
+## Prediction Models
 
-```
-
-Random Forest
+Use Random Forest to create predication model
 
 ```{r cache=TRUE}
-#myseeds <- list() length 11, 10 integer vectors of size 3
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
 
 modelRF.save <- "modelRF.Rds"
@@ -179,10 +160,9 @@ if (file.exists(modelRF.save)) {
     modelRF <- readRDS(modelRF.save)
 } else {
     # Otherwise, run the training.
-    modelRF <- train(classe ~ ., method="rf", data=train.preproc, trControl=trCtrl)
+    modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
     saveRDS(modelRF, modelRF.save)
 }
-
 ```
 
 Boosting
@@ -196,63 +176,41 @@ if (file.exists(modelGBM.save)) {
     modelGBM <- readRDS(modelGBM.save)
 } else {
     # Otherwise, run the training.
-    modelGBM <- train(classe ~ ., method="gbm", data=train.preproc, verbose=FALSE, trControl=trCtrl)
+    modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
     saveRDS(modelGBM, modelGBM.save)
 }
-
 ```
 
 LDA
 
 ```{r}
-modelLDA.save <- "modelLDA.Rds"
-
-if (file.exists(modelLDA.save)) {
-    # Read the model in and assign it to a variable.
-    #library(gbm)
-    modelLDA <- readRDS(modelLDA.save)
-} else {
-    # Otherwise, run the training.
-    modelLDA <- train(classe ~ ., method="lda", data=train.preproc, trControl=trCtrl)
-    saveRDS(modelLDA, modelLDA.save)
-}
+modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
 ```
 
-Prediction
+## Compare Prediction Models
 
 ```{r}
-predRF <- predict(modelRF, validate)
-cmRF <- confusionMatrix(predRF, validate$classe)
+predRF <- predict(modelRF, valid.set)
+cmRF <- confusionMatrix(predRF, valid.set$classe)
 
-predGBM <- predict(modelGBM, validate)
-cmGBM <- confusionMatrix(predGBM, validate$classe)
+predGBM <- predict(modelGBM, valid.set)
+cmGBM <- confusionMatrix(predGBM, valid.set$classe)
 
-predLDA <- predict(modelLDA, validate)
-cmLDA <- confusionMatrix(predLDA, validate$classe)
-#predCART <- -predict(modelCART, validate)
-#cmCART <- confusionMatrix(predCART, validate$classe)
+predLDA <- predict(modelLDA, valid.set)
+cmLDA <- confusionMatrix(predLDA, valid.set$classe)
 ```
 
-Stacked Models
+## Create a Stacked Model
 
 ```{r}
-predDF <- data.frame(predRF, predGBM, classe=validate$classe)
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
 mod.comb <- train(classe ~ ., data=predDF, method="rf")
-pred.comb <- predict(mod.comb, validate)
-confusionMatrix(pred.comb, validate$classe)
+pred.comb <- predict(mod.comb, valid.set)
+confusionMatrix(pred.comb, valid.set$classe)
 
 ```
 
-
-```{r warning=FALSE}
-#near.zero <- nearZeroVar(training, saveMetrics = TRUE)
-#nz <- training[,near.zero$zeroVar == FALSE]
-#preProc <- preProcess(nz[,8:150], method="pca", pcaComp=5)
-#trainPCA <- predict(preProc, nz[,8:150])
-#modelFit <- train(training$classe ~ ., method="glm", data=trainPCA)
-```
-
-Predict Testing Set
+## Predict Testing Set
 
 ```{r}
 pml_write_files = function(x){
@@ -265,7 +223,7 @@ pml_write_files = function(x){
 ```
 
 ```{r}
-predTest <- predict(modelRF, test)
+predTest <- predict(modelRF, test.set)
 answer <- as.character(predTest)
 pml_write_files(answer)
 saveRDS(predTest, "test_predictions.Rds")
