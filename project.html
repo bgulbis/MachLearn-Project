@@ -10,7 +10,7 @@
 
 <meta name="author" content="Brian Gulbis" />
 
-<meta name="date" content="2015-08-16" />
+<meta name="date" content="2015-08-29" />
 
 <title>Weight Lifting Exercise Prediction</title>
 
@@ -71,11 +71,155 @@ img {
 <h1 class="title">Weight Lifting Exercise Prediction</h1>
 <h3 class="subtitle"><em>Practicle Machine Learning Course Project</em></h3>
 <h4 class="author"><em>Brian Gulbis</em></h4>
-<h4 class="date"><em>August 16, 2015</em></h4>
+<h4 class="date"><em>August 29, 2015</em></h4>
 </div>
 
 
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>In this project, the Human Activity Recognition (HAR) data set will be used to build a model which predicts the manner in which an exercise was performed.</p>
+</div>
+<div id="data-processing" class="section level2">
+<h2>Data Processing</h2>
+<div id="create-cross-validation-partition" class="section level3">
+<h3>Create Cross-Validation Partition</h3>
+<p>The training data will be split into a training set and a testing set which will be used to fit the model and estimate the out of sample error.</p>
+<pre class="r"><code>inTrain &lt;- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+train.data &lt;- training[inTrain,]
+valid.data &lt;- training[-inTrain,]</code></pre>
+</div>
+</div>
+<div id="exploratory-analysis" class="section level2">
+<h2>Exploratory Analysis</h2>
+<pre class="r"><code>#summary(training)
 
+#featurePlot(x=training[,c(&quot;avg_roll_belt&quot;,&quot;var_roll_belt&quot;)], y=training$classe, plot=&quot;pairs&quot;)
+
+#qplot(var_roll_belt, classe, data=training)</code></pre>
+<div id="near-zero-frequency" class="section level3">
+<h3>Near Zero Frequency</h3>
+<p>Remove near-zero variables</p>
+<pre class="r"><code>train.set &lt;- select(train.data, -(X:new_window), -classe)
+near.zero &lt;- nearZeroVar(train.set)
+near.zero.fields &lt;- nearZeroVar(train.set, saveMetrics=TRUE)
+train.set &lt;- train.set[, -near.zero]</code></pre>
+</div>
+<div id="find-highly-correlated-predictors" class="section level3">
+<h3>Find Highly-Correlated Predictors</h3>
+<p>Find highly-correlated predictors and remove</p>
+<pre class="r"><code>train.cor &lt;- cor(train.set, use=&quot;complete.obs&quot;)
+high.cor &lt;- findCorrelation(train.cor, cutoff = 0.8)
+train.set &lt;- train.set[, -high.cor]</code></pre>
+</div>
+<div id="center-and-scale-impute-missing-values" class="section level3">
+<h3>Center and Scale; Impute Missing Values</h3>
+<p>Use k-nearest neighbor to impute missing values</p>
+<pre class="r"><code>set.seed(1235)
+pre.proc &lt;- preProcess(train.set, method=c(&quot;knnImpute&quot;))
+train.set &lt;- predict(pre.proc, train.set)
+train.set$classe &lt;- train.data$classe</code></pre>
+</div>
+<div id="prep-training-validation-set" class="section level3">
+<h3>Prep Training Validation Set</h3>
+<pre class="r"><code>valid.set &lt;- select(valid.data, -(X:new_window), -classe)
+valid.set &lt;- valid.set[, -near.zero]
+valid.set &lt;- valid.set[, -high.cor]
+valid.set &lt;- predict(pre.proc, valid.set)
+valid.set$classe &lt;- valid.data$classe</code></pre>
+</div>
+<div id="prep-final-test-set" class="section level3">
+<h3>Prep Final Test Set</h3>
+<pre class="r"><code>test.set &lt;- dplyr::select(testing, -(X:new_window), -problem_id)
+test.set &lt;- test.set[, -near.zero]
+test.set &lt;- test.set[, -high.cor]
+test.set &lt;- predict(pre.proc, test.set)</code></pre>
+</div>
+</div>
+<div id="prediction-models" class="section level2">
+<h2>Prediction Models</h2>
+<p>Use Random Forest to create predication model. This model was chosen by first fitting several models using different techniques (Boosting, LDA, and creating a stacked model) and comparing the out of sample error using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.</p>
+<pre class="r"><code>trCtrl &lt;- trainControl(method=&quot;repeatedcv&quot;, seeds=myseeds)
+
+modelRF.save &lt;- &quot;modelRF.Rds&quot;
+
+if (file.exists(modelRF.save)) {
+    # Read the model in and assign it to a variable.
+    library(randomForest)
+    modelRF &lt;- readRDS(modelRF.save)
+} else {
+    # Otherwise, run the training.
+    modelRF &lt;- train(classe ~ ., method=&quot;rf&quot;, data=train.set, trControl=trCtrl)
+    saveRDS(modelRF, modelRF.save)
+}
+modelRF$finalModel</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 43
+## 
+##         OOB estimate of  error rate: 0.33%
+## Confusion matrix:
+##      A    B    C    D    E  class.error
+## A 4182    2    0    0    1 0.0007168459
+## B    6 2836    6    0    0 0.0042134831
+## C    0   13 2554    0    0 0.0050642774
+## D    0    0   14 2396    2 0.0066334992
+## E    0    1    0    4 2701 0.0018477458</code></pre>
+<div id="out-of-sample-error" class="section level3">
+<h3>Out of Sample Error</h3>
+<pre class="r"><code>predRF &lt;- predict(modelRF, valid.set)
+cmRF &lt;- confusionMatrix(predRF, valid.set$classe)
+cmRF</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1393    3    0    0    0
+##          B    2  944    1    0    0
+##          C    0    2  853   11    0
+##          D    0    0    1  789    2
+##          E    0    0    0    4  899
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9947          
+##                  95% CI : (0.9922, 0.9965)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9933          
+##  Mcnemar's Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9986   0.9947   0.9977   0.9813   0.9978
+## Specificity            0.9991   0.9992   0.9968   0.9993   0.9990
+## Pos Pred Value         0.9979   0.9968   0.9850   0.9962   0.9956
+## Neg Pred Value         0.9994   0.9987   0.9995   0.9964   0.9995
+## Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
+## Detection Rate         0.2841   0.1925   0.1739   0.1609   0.1833
+## Detection Prevalence   0.2847   0.1931   0.1766   0.1615   0.1841
+## Balanced Accuracy      0.9989   0.9970   0.9972   0.9903   0.9984</code></pre>
+<p>Out of sample error is 0.0053018</p>
+</div>
+</div>
+<div id="predict-testing-set" class="section level2">
+<h2>Predict Testing Set</h2>
+<pre class="r"><code>pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(&quot;problem_id_&quot;,i,&quot;.txt&quot;)
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}</code></pre>
+<pre class="r"><code>predTest &lt;- predict(modelRF, test.set)
+answer &lt;- as.character(predTest)
+pml_write_files(answer)
+saveRDS(predTest, &quot;test_predictions.Rds&quot;)</code></pre>
+</div>
 
 
 </div>

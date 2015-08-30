@@ -9,21 +9,25 @@ output:
     keep_md: yes
 ---
 
-```{r echo=FALSE}
+## Introduction
+
+In this project, the Human Activity Recognition (HAR) data set will be used to build a model which predicts the manner in which an exercise was performed.  
+
+```{r load_library, echo=FALSE, message=FALSE}
 library(plyr)
 library(dplyr)
 library(lubridate)
 library(caret)
 ```
 
-```{r echo=FALSE}
+```{r parallel, echo=FALSE, message=FALSE}
 library(doParallel)
 if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
     registerDoParallel(core=4)
 }
 ```
 
-```{r warning=FALSE}
+```{r read_training, echo=FALSE, warning=FALSE}
 training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
     mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
            user_name = factor(user_name),
@@ -37,7 +41,9 @@ training <- read.csv("pml-training.csv", stringsAsFactors = FALSE) %>%
            kurtosis_pitch_forearm = kurtosis_picth_forearm,
            max_pitch_forearm = max_picth_forearm) %>%
     mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
+```
 
+```{r read_testing, echo=FALSE}
 testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
     mutate(cvtd_timestamp = dmy_hm(cvtd_timestamp),
            user_name = factor(user_name),
@@ -52,9 +58,13 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
     mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
 ```
 
-## Create Validation Partition
+## Data Processing
 
-```{r}
+### Create Cross-Validation Partition
+
+The training data will be split into a training set and a testing set which will be used to fit the model and estimate the out of sample error.
+
+```{r split_training}
 inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
 train.data <- training[inTrain,]
 valid.data <- training[-inTrain,]
@@ -71,59 +81,43 @@ valid.data <- training[-inTrain,]
 
 ```
 
-Potential features to include (from authors)
-
-* Belt
-  * mean and variance of roll: avg\_roll\_belt, var\_roll\_belt
-  * maximum, range, and variance of accelerometer: var\_total\_accel\_belt (?)
-  * variance of gyro
-  * variance of magnetometer
-* Arm
-  * variance of accelerometer
-  * maximum and minimum of magnetometer
-* Dumbbell
-  * maximum of accelerometer
-  * variance of gyro
-  * maximum and minimum of magnetometer
-* Forearm
-  * sum of pitch: pitch\_forearm
-  * maximum and minimum of gyro
-
-
-## Near Zero Frequency
+### Near Zero Frequency
 
 Remove near-zero variables
 
-```{r}
+```{r near_zero}
 train.set <- select(train.data, -(X:new_window), -classe)
 near.zero <- nearZeroVar(train.set)
+near.zero.fields <- nearZeroVar(train.set, saveMetrics=TRUE)
 train.set <- train.set[, -near.zero]
 ```
 
-## Find Highly-Correlated Predictors
+### Find Highly-Correlated Predictors
 
 Find highly-correlated predictors and remove
 
-```{r}
+```{r highly_correlated}
 train.cor <- cor(train.set, use="complete.obs")
 high.cor <- findCorrelation(train.cor, cutoff = 0.8)
 train.set <- train.set[, -high.cor]
 ```
 
-## Center and Scale; Impute Missing Values
+### Center and Scale; Impute Missing Values
 
 Use k-nearest neighbor to impute missing values
 
-```{r}
+```{r preprocess}
 set.seed(1235)
 pre.proc <- preProcess(train.set, method=c("knnImpute"))
 train.set <- predict(pre.proc, train.set)
 train.set$classe <- train.data$classe
 ```
 
-## Prep Training Validation Set
+### Prep Training Validation and Final Test Sets
 
-```{r}
+The same pre-processing is applied to the training validation and final testing sets, using the results of the near zero and high correlation which were applied to the training subset. 
+
+```{r valid_set, echo=FALSE}
 valid.set <- select(valid.data, -(X:new_window), -classe)
 valid.set <- valid.set[, -near.zero]
 valid.set <- valid.set[, -high.cor]
@@ -131,9 +125,7 @@ valid.set <- predict(pre.proc, valid.set)
 valid.set$classe <- valid.data$classe
 ```
 
-## Prep Final Test Set
-
-```{r}
+```{r test_set, echo=FALSE}
 test.set <- dplyr::select(testing, -(X:new_window), -problem_id)
 test.set <- test.set[, -near.zero]
 test.set <- test.set[, -high.cor]
@@ -141,15 +133,39 @@ test.set <- predict(pre.proc, test.set)
 ```
 
 
-```{r echo=FALSE}
+```{r set_seed, echo=FALSE}
 myseeds <- list(c(123,234,345), c(456,567,678), c(789,890,901), c(987,876,765), c(654,543,432), c(321,210,109), c(135,246,357), c(468,579,680), c(791,802,913), c(975,864,753), 54321) 
 ```
 
+```{r save_data, echo=FALSE}
+
+train.save <- "trainSet.Rds"
+
+if (file.exists(train.save)) {
+    # Read the data in and assign it to a variable.
+    train.set <- readRDS(train.save)
+} else {
+    # Otherwise, save the training set.
+    saveRDS(train.set, train.save)
+}
+
+valid.save <- "validSet.Rds"
+
+if (file.exists(valid.save)) {
+    # Read the data in and assign it to a variable.
+    valid.set <- readRDS(valid.save)
+} else {
+    # Otherwise, save the validating set.
+    saveRDS(valid.set, valid.save)
+}
+```
+
+
 ## Prediction Models
 
-Use Random Forest to create predication model
+Use Random Forest to create predication model. This model was chosen by first fitting several models using different techniques (Boosting, LDA, and creating a stacked model) and comparing the out of sample error using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.
 
-```{r cache=TRUE}
+```{r model_rf, cache=TRUE}
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
 
 modelRF.save <- "modelRF.Rds"
@@ -163,11 +179,22 @@ if (file.exists(modelRF.save)) {
     modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
     saveRDS(modelRF, modelRF.save)
 }
+modelRF$finalModel
 ```
+
+### Out of Sample Error
+
+```{r}
+predRF <- predict(modelRF, valid.set)
+cmRF <- confusionMatrix(predRF, valid.set$classe)
+cmRF
+```
+
+Out of sample error is `r (1 - cmRF$overall["Accuracy"]) * 100`%
 
 ## Predict Testing Set
 
-```{r}
+```{r pml_files, eval=FALSE}
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
@@ -177,7 +204,7 @@ pml_write_files = function(x){
 }
 ```
 
-```{r}
+```{r predict_test, eval=FALSE}
 predTest <- predict(modelRF, test.set)
 answer <- as.character(predTest)
 pml_write_files(answer)
