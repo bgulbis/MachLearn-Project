@@ -11,7 +11,17 @@ output:
 
 ## Introduction
 
-In this project, the Human Activity Recognition (HAR) data set will be used to build a model which predicts the manner in which an exercise was performed.  
+In the Weight Lifting Exercises data set, six healthy subjects were asked to perform sets of dumbbell biceps curls in five different manners: 
+
+A. Exactly according to specifications
+B. Throwing the elbows to the front
+C. Lifting the dumbbell only halfway
+D. Lowering the dumbbell only halfway
+E. Throwing the hips to the front
+
+Data were collected from sensors on the belt, the arm, the forearm, and the dumbbell for each subject as they performed the exercises using these five techniques. Using the accelerometer, gyroscope, and magnetometer readings from the four sensors, eight features were calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis, skewness. 
+
+In this project, the calculated features of the data set will be used to build a model which predicts the manner in which an exercise was performed. 
 
 ```{r load_library, echo=FALSE, message=FALSE}
 library(plyr)
@@ -22,9 +32,7 @@ library(caret)
 
 ```{r parallel, echo=FALSE, message=FALSE}
 library(doParallel)
-if (Sys.getenv("PROCESSOR_ARCHITECTURE") != "x86") {
-    registerDoParallel(core=4)
-}
+registerDoParallel(core = Sys.getenv("NUMBER_OF_PROCESSORS") / 2)
 ```
 
 ```{r read_training, echo=FALSE, warning=FALSE}
@@ -58,11 +66,9 @@ testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE) %>%
     mutate_each(funs(as.numeric), roll_belt:magnet_forearm_z)
 ```
 
-## Data Processing
+## Creating a Cross-Validation Partition
 
-### Create Cross-Validation Partition
-
-The training data will be split into a training set and a testing set which will be used to fit the model and estimate the out of sample error.
+A training data set and a test data set have been provided. To develop the prediction model, cross-validation will be used. The training data set will be split into a training set containing 75% of the original training set, and a validation set containing 25% of the original training set. The new training set will be used to fit different models and determine which model results in the best prediction estimate, while the validation set will be used to estimate the out of sample error.
 
 ```{r split_training}
 inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
@@ -70,7 +76,7 @@ train.data <- training[inTrain,]
 valid.data <- training[-inTrain,]
 ```
 
-## Exploratory Analysis
+## Building the Predication Model
 
 ```{r}
 #summary(training)
@@ -81,9 +87,9 @@ valid.data <- training[-inTrain,]
 
 ```
 
-### Near Zero Frequency
+### Pre-Processing the Training Data
 
-Remove near-zero variables
+The first step in pre-processing the new training data set will be to remove any near-zero covariates.
 
 ```{r near_zero}
 train.set <- select(train.data, -(X:new_window), -classe)
@@ -92,9 +98,7 @@ near.zero.fields <- nearZeroVar(train.set, saveMetrics=TRUE)
 train.set <- train.set[, -near.zero]
 ```
 
-### Find Highly-Correlated Predictors
-
-Find highly-correlated predictors and remove
+The next step will be to find and remove any highly-correlated predictors.
 
 ```{r highly_correlated}
 train.cor <- cor(train.set, use="complete.obs")
@@ -102,20 +106,16 @@ high.cor <- findCorrelation(train.cor, cutoff = 0.8)
 train.set <- train.set[, -high.cor]
 ```
 
-### Center and Scale; Impute Missing Values
+The final pre-processing steps will be to center and scale the data, and impute missing values using the k-nearest neighbor method.
 
-Use k-nearest neighbor to impute missing values
-
-```{r preprocess}
+```{r knn}
 set.seed(1235)
 pre.proc <- preProcess(train.set, method=c("knnImpute"))
 train.set <- predict(pre.proc, train.set)
 train.set$classe <- train.data$classe
 ```
 
-### Prep Training Validation and Final Test Sets
-
-The same pre-processing is applied to the training validation and final testing sets, using the results of the near zero and high correlation which were applied to the training subset. 
+The same pre-processing will be applied to the training validation and final testing sets, using the results from the near zero, correlation, and imputation processes which were applied to the training subset. 
 
 ```{r valid_set, echo=FALSE}
 valid.set <- select(valid.data, -(X:new_window), -classe)
@@ -131,7 +131,6 @@ test.set <- test.set[, -near.zero]
 test.set <- test.set[, -high.cor]
 test.set <- predict(pre.proc, test.set)
 ```
-
 
 ```{r set_seed, echo=FALSE}
 myseeds <- list(c(123,234,345), c(456,567,678), c(789,890,901), c(987,876,765), c(654,543,432), c(321,210,109), c(135,246,357), c(468,579,680), c(791,802,913), c(975,864,753), 54321) 
@@ -163,7 +162,7 @@ if (file.exists(valid.save)) {
 
 ## Prediction Models
 
-Use Random Forest to create predication model. This model was chosen by first fitting several models using different techniques (Boosting, LDA, and creating a stacked model) and comparing the out of sample error using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.
 
 ```{r model_rf, cache=TRUE}
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
@@ -190,9 +189,11 @@ cmRF <- confusionMatrix(predRF, valid.set$classe)
 cmRF
 ```
 
-Out of sample error is `r (1 - cmRF$overall["Accuracy"]) * 100`%
+The out of sample error for the final model created using the Random Forest method is `r (1 - cmRF$overall["Accuracy"]) * 100`%
 
 ## Predict Testing Set
+
+The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
 
 ```{r pml_files, eval=FALSE}
 pml_write_files = function(x){
