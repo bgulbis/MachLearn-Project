@@ -13,11 +13,12 @@ output:
 
 In the Weight Lifting Exercises data set, six healthy subjects were asked to perform sets of dumbbell biceps curls in five different manners: 
 
-A. Exactly according to specifications
-B. Throwing the elbows to the front
-C. Lifting the dumbbell only halfway
-D. Lowering the dumbbell only halfway
-E. Throwing the hips to the front
+1. Exactly according to specifications
+2. Throwing the elbows to the front
+3. Lifting the dumbbell only halfway
+4. Lowering the dumbbell only halfway
+5. Throwing the hips to the front
+
 
 Data were collected from sensors on the belt, the arm, the forearm, and the dumbbell for each subject as they performed the exercises using these five techniques. Using the accelerometer, gyroscope, and magnetometer readings from the four sensors, eight features were calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis, skewness. 
 
@@ -32,7 +33,7 @@ library(caret)
 
 ```{r parallel, echo=FALSE, message=FALSE}
 library(doParallel)
-registerDoParallel(core = Sys.getenv("NUMBER_OF_PROCESSORS") / 2)
+registerDoParallel()
 ```
 
 ```{r read_training, echo=FALSE, warning=FALSE}
@@ -76,9 +77,7 @@ train.data <- training[inTrain,]
 valid.data <- training[-inTrain,]
 ```
 
-## Building the Predication Model
-
-```{r}
+```{r echo=FALSE}
 #summary(training)
 
 #featurePlot(x=training[,c("avg_roll_belt","var_roll_belt")], y=training$classe, plot="pairs")
@@ -87,35 +86,29 @@ valid.data <- training[-inTrain,]
 
 ```
 
-### Pre-Processing the Training Data
+## Pre-Processing the Training Data
 
-The first step in pre-processing the new training data set will be to remove any near-zero covariates.
+The first step in pre-processing the new training data set will be to remove any near-zero covariates. The next step will be to find and remove any highly-correlated predictors. The final pre-processing steps will be to center and scale the data, and impute missing values using the k-nearest neighbor method.
 
-```{r near_zero}
+The same pre-processing will be applied to the training validation and final testing sets, using the results from the near zero, correlation, and imputation processes which were applied to the training subset. 
+
+
+```{r preprocess}
 train.set <- select(train.data, -(X:new_window), -classe)
 near.zero <- nearZeroVar(train.set)
 near.zero.fields <- nearZeroVar(train.set, saveMetrics=TRUE)
 train.set <- train.set[, -near.zero]
-```
 
-The next step will be to find and remove any highly-correlated predictors.
-
-```{r highly_correlated}
 train.cor <- cor(train.set, use="complete.obs")
 high.cor <- findCorrelation(train.cor, cutoff = 0.8)
 train.set <- train.set[, -high.cor]
-```
 
-The final pre-processing steps will be to center and scale the data, and impute missing values using the k-nearest neighbor method.
-
-```{r knn}
 set.seed(1235)
 pre.proc <- preProcess(train.set, method=c("knnImpute"))
 train.set <- predict(pre.proc, train.set)
 train.set$classe <- train.data$classe
 ```
 
-The same pre-processing will be applied to the training validation and final testing sets, using the results from the near zero, correlation, and imputation processes which were applied to the training subset. 
 
 ```{r valid_set, echo=FALSE}
 valid.set <- select(valid.data, -(X:new_window), -classe)
@@ -159,12 +152,11 @@ if (file.exists(valid.save)) {
 }
 ```
 
+## Building the Predication Model
 
-## Prediction Models
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
 
-The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.
-
-```{r model_rf, cache=TRUE}
+```{r model_rf, cache=TRUE, echo=FALSE}
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
 
 modelRF.save <- "modelRF.Rds"
@@ -178,24 +170,30 @@ if (file.exists(modelRF.save)) {
     modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
     saveRDS(modelRF, modelRF.save)
 }
+```
+
+```{r}
 modelRF$finalModel
 ```
 
 ### Out of Sample Error
 
-```{r}
+```{r echo=FALSE}
 predRF <- predict(modelRF, valid.set)
 cmRF <- confusionMatrix(predRF, valid.set$classe)
+```
+
+```{r}
 cmRF
 ```
 
-The out of sample error for the final model created using the Random Forest method is `r (1 - cmRF$overall["Accuracy"]) * 100`%
+After applying the model to the validation subset, the out of sample error for the final model using the Random Forest method is estimated at `r round((1 - cmRF$overall["Accuracy"]) * 100, 2)`%
 
-## Predict Testing Set
+## Predict the Testing Set
 
 The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
 
-```{r pml_files, eval=FALSE}
+```{r pml_files, eval=FALSE, echo=FALSE}
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
@@ -205,7 +203,7 @@ pml_write_files = function(x){
 }
 ```
 
-```{r predict_test, eval=FALSE}
+```{r predict_test, eval=FALSE, echo=FALSE}
 predTest <- predict(modelRF, test.set)
 answer <- as.character(predTest)
 pml_write_files(answer)

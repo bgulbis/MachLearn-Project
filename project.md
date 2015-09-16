@@ -4,7 +4,18 @@ Brian Gulbis
 
 ## Introduction
 
-In this project, the Human Activity Recognition (HAR) data set will be used to build a model which predicts the manner in which an exercise was performed.  
+In the Weight Lifting Exercises data set, six healthy subjects were asked to perform sets of dumbbell biceps curls in five different manners: 
+
+1. Exactly according to specifications
+2. Throwing the elbows to the front
+3. Lifting the dumbbell only halfway
+4. Lowering the dumbbell only halfway
+5. Throwing the hips to the front
+
+
+Data were collected from sensors on the belt, the arm, the forearm, and the dumbbell for each subject as they performed the exercises using these five techniques. Using the accelerometer, gyroscope, and magnetometer readings from the four sensors, eight features were calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis, skewness. 
+
+In this project, the calculated features of the data set will be used to build a model which predicts the manner in which an exercise was performed. 
 
 
 
@@ -14,11 +25,9 @@ In this project, the Human Activity Recognition (HAR) data set will be used to b
 
 
 
-## Data Processing
+## Creating a Cross-Validation Partition
 
-### Create Cross-Validation Partition
-
-The training data will be split into a training set and a testing set which will be used to fit the model and estimate the out of sample error.
+A training data set and a test data set have been provided. To develop the prediction model, cross-validation will be used. The training data set will be split into a training set containing 75% of the original training set, and a validation set containing 25% of the original training set. The new training set will be used to fit different models and determine which model results in the best prediction estimate, while the validation set will be used to estimate the out of sample error.
 
 
 ```r
@@ -27,20 +36,14 @@ train.data <- training[inTrain,]
 valid.data <- training[-inTrain,]
 ```
 
-## Exploratory Analysis
 
 
-```r
-#summary(training)
+## Pre-Processing the Training Data
 
-#featurePlot(x=training[,c("avg_roll_belt","var_roll_belt")], y=training$classe, plot="pairs")
+The first step in pre-processing the new training data set will be to remove any near-zero covariates. The next step will be to find and remove any highly-correlated predictors. The final pre-processing steps will be to center and scale the data, and impute missing values using the k-nearest neighbor method.
 
-#qplot(var_roll_belt, classe, data=training)
-```
+The same pre-processing will be applied to the training validation and final testing sets, using the results from the near zero, correlation, and imputation processes which were applied to the training subset. 
 
-### Near Zero Frequency
-
-Remove near-zero variables
 
 
 ```r
@@ -48,77 +51,34 @@ train.set <- select(train.data, -(X:new_window), -classe)
 near.zero <- nearZeroVar(train.set)
 near.zero.fields <- nearZeroVar(train.set, saveMetrics=TRUE)
 train.set <- train.set[, -near.zero]
-```
 
-### Find Highly-Correlated Predictors
-
-Find highly-correlated predictors and remove
-
-
-```r
 train.cor <- cor(train.set, use="complete.obs")
 high.cor <- findCorrelation(train.cor, cutoff = 0.8)
 train.set <- train.set[, -high.cor]
-```
 
-### Center and Scale; Impute Missing Values
-
-Use k-nearest neighbor to impute missing values
-
-
-```r
 set.seed(1235)
 pre.proc <- preProcess(train.set, method=c("knnImpute"))
 train.set <- predict(pre.proc, train.set)
 train.set$classe <- train.data$classe
 ```
 
-### Prep Training Validation Set
+
+
+
+
+
+
+
+
+
+## Building the Predication Model
+
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
+
+
 
 
 ```r
-valid.set <- select(valid.data, -(X:new_window), -classe)
-valid.set <- valid.set[, -near.zero]
-valid.set <- valid.set[, -high.cor]
-valid.set <- predict(pre.proc, valid.set)
-valid.set$classe <- valid.data$classe
-```
-
-### Prep Final Test Set
-
-
-```r
-test.set <- dplyr::select(testing, -(X:new_window), -problem_id)
-test.set <- test.set[, -near.zero]
-test.set <- test.set[, -high.cor]
-test.set <- predict(pre.proc, test.set)
-```
-
-
-
-
-
-
-
-## Prediction Models
-
-Use Random Forest to create predication model. This model was chosen by first fitting several models using different techniques (Boosting, LDA, and creating a stacked model) and comparing the out of sample error using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set.
-
-
-```r
-trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
-
-modelRF.save <- "modelRF.Rds"
-
-if (file.exists(modelRF.save)) {
-    # Read the model in and assign it to a variable.
-    library(randomForest)
-    modelRF <- readRDS(modelRF.save)
-} else {
-    # Otherwise, run the training.
-    modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
-    saveRDS(modelRF, modelRF.save)
-}
 modelRF$finalModel
 ```
 
@@ -143,9 +103,9 @@ modelRF$finalModel
 ### Out of Sample Error
 
 
+
+
 ```r
-predRF <- predict(modelRF, valid.set)
-cmRF <- confusionMatrix(predRF, valid.set$classe)
 cmRF
 ```
 
@@ -183,26 +143,13 @@ cmRF
 ## Balanced Accuracy      0.9989   0.9970   0.9972   0.9903   0.9984
 ```
 
-Out of sample error is 0.0053018
+After applying the model to the validation subset, the out of sample error for the final model using the Random Forest method is estimated at 0.53%
 
 ## Predict Testing Set
 
-
-```r
-pml_write_files = function(x){
-  n = length(x)
-  for(i in 1:n){
-    filename = paste0("problem_id_",i,".txt")
-    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
-  }
-}
-```
+The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
 
 
-```r
-predTest <- predict(modelRF, test.set)
-answer <- as.character(predTest)
-pml_write_files(answer)
-saveRDS(predTest, "test_predictions.Rds")
-```
+
+
 
