@@ -154,7 +154,7 @@ if (file.exists(valid.save)) {
 
 ## Building the Predication Model
 
-The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. 
 
 ```{r model_rf, cache=TRUE, echo=FALSE}
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
@@ -172,16 +172,75 @@ if (file.exists(modelRF.save)) {
 }
 ```
 
+```{r model_gbm, echo=FALSE}
+modelGBM.save <- "modelGBM.Rds"
+
+if (file.exists(modelGBM.save)) {
+    # Read the model in and assign it to a variable.
+    library(gbm)
+    modelGBM <- readRDS(modelGBM.save)
+} else {
+    # Otherwise, run the training.
+    modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
+    saveRDS(modelGBM, modelGBM.save)
+}
+```
+
+```{r model_lda, echo=FALSE}
+modelLDA.save <- "modelLDA.Rds"
+
+if (file.exists(modelLDA.save)) {
+    # Read the model in and assign it to a variable.
+    modelLDA <- readRDS(modelLDA.save)
+} else {
+    # Otherwise, run the training.
+    modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
+    saveRDS(modelLDA, modelLDA.save)
+}
+```
+
+```{r model_assess, echo=FALSE}
+predRF <- predict(modelRF, valid.set)
+cmRF <- confusionMatrix(predRF, valid.set$classe)
+
+predGBM <- predict(modelGBM, valid.set)
+cmGBM <- confusionMatrix(predGBM, valid.set$classe)
+
+predLDA <- predict(modelLDA, valid.set)
+cmLDA <- confusionMatrix(predLDA, valid.set$classe)
+```
+
+```{r model_stack, echo=FALSE}
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
+mod.comb <- train(classe ~ ., data=predDF, method="rf")
+pred.comb <- predict(mod.comb, valid.set)
+confusionMatrix(pred.comb, valid.set$classe)
+```
+
+```{r models, eval=FALSE}
+trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
+
+modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
+predRF <- predict(modelRF, valid.set)
+
+modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
+predGBM <- predict(modelGBM, valid.set)
+
+modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
+predLDA <- predict(modelLDA, valid.set)
+
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
+mod.comb <- train(classe ~ ., data=predDF, method="rf")
+pred.comb <- predict(mod.comb, valid.set)
+```
+
+The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
+
 ```{r}
 modelRF$finalModel
 ```
 
 ### Out of Sample Error
-
-```{r echo=FALSE}
-predRF <- predict(modelRF, valid.set)
-cmRF <- confusionMatrix(predRF, valid.set$classe)
-```
 
 ```{r}
 cmRF
