@@ -154,9 +154,9 @@ if (file.exists(valid.save)) {
 
 ## Building the Predication Model
 
-The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included the Random Forest and Boosting models, and used Random Forest to create the model. 
 
-```{r model_rf, cache=TRUE, echo=FALSE}
+```{r model_rf, echo=FALSE, message=FALSE}
 trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
 
 modelRF.save <- "modelRF.Rds"
@@ -172,24 +172,82 @@ if (file.exists(modelRF.save)) {
 }
 ```
 
-```{r}
-modelRF$finalModel
+```{r model_gbm, echo=FALSE, message=FALSE}
+modelGBM.save <- "modelGBM.Rds"
+
+if (file.exists(modelGBM.save)) {
+    # Read the model in and assign it to a variable.
+    library(gbm)
+    modelGBM <- readRDS(modelGBM.save)
+} else {
+    # Otherwise, run the training.
+    modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
+    saveRDS(modelGBM, modelGBM.save)
+}
 ```
 
-### Out of Sample Error
+```{r model_lda, echo=FALSE, message=FALSE}
+modelLDA.save <- "modelLDA.Rds"
 
-```{r echo=FALSE}
+if (file.exists(modelLDA.save)) {
+    # Read the model in and assign it to a variable.
+    modelLDA <- readRDS(modelLDA.save)
+} else {
+    # Otherwise, run the training.
+    modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
+    saveRDS(modelLDA, modelLDA.save)
+}
+```
+
+```{r model_assess, echo=FALSE, message=FALSE}
 predRF <- predict(modelRF, valid.set)
 cmRF <- confusionMatrix(predRF, valid.set$classe)
+
+predGBM <- predict(modelGBM, valid.set)
+cmGBM <- confusionMatrix(predGBM, valid.set$classe)
+
+predLDA <- predict(modelLDA, valid.set)
+cmLDA <- confusionMatrix(predLDA, valid.set$classe)
 ```
 
-```{r}
-cmRF
+```{r model_stack, echo=FALSE, cache=TRUE}
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
+modStack <- train(classe ~ ., data=predDF, method="rf")
+predStack <- predict(modStack, valid.set)
+cmStack <- confusionMatrix(predStack, valid.set$classe)
 ```
 
-After applying the model to the validation subset, the out of sample error for the final model using the Random Forest method is estimated at `r round((1 - cmRF$overall["Accuracy"]) * 100, 2)`%
+```{r models, eval=FALSE}
+trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
 
-## Predict the Testing Set
+modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
+predRF <- predict(modelRF, valid.set)
+
+modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
+predGBM <- predict(modelGBM, valid.set)
+
+modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
+predLDA <- predict(modelLDA, valid.set)
+
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
+modStack <- train(classe ~ ., data=predDF, method="rf")
+predStack <- predict(modStack, valid.set)
+```
+
+### Out of Sample Error Estimate
+
+The out of sample error for each model was then estimated by creating a Confusion Matrix using the training validation set. The Stacked Model and Random Forest Model had the lowest, and nearly identical, out of sample errors (see table). Since the Stacked Model had the lowest out of sample error, it will be used as the final model to predict on the testing set.
+
+Model | Out of Sample Error
+------|------------------------------
+Random Forest | `r round((1 - cmRF$overall["Accuracy"]) * 100, 2)`%
+Boosting | `r round((1 - cmGBM$overall["Accuracy"]) * 100, 2)`%
+Linear Discriminate Analysis | `r round((1 - cmLDA$overall["Accuracy"]) * 100, 2)`%
+Stacked | `r round((1 - cmStack$overall["Accuracy"]) * 100, 2)`%
+
+
+
+## Predict on the Testing Set
 
 The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
 
@@ -203,8 +261,8 @@ pml_write_files = function(x){
 }
 ```
 
-```{r predict_test, eval=FALSE, echo=FALSE}
-predTest <- predict(modelRF, test.set)
+```{r predict_test, eval=FALSE}
+predTest <- predict(modelStack, test.set)
 answer <- as.character(predTest)
 pml_write_files(answer)
 saveRDS(predTest, "test_predictions.Rds")
