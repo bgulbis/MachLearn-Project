@@ -73,83 +73,60 @@ train.set$classe <- train.data$classe
 
 ## Building the Predication Model
 
-The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included these three models. The out of sample error for each model was then calculated using the training validation set. The model created by the Random Forest method had the highest accuracy, and therefore will be used to predict on the final testing set. Looking at the results of this model applied to the training subset, the estimated error rate is 0.33%. To more accurately determine the true out of sample error rate, the model will be applied to the validation portion of the train data set. 
+The final prediction model was selected by first fitting several models using three different techniques (Random Forest, Boosting, Linear Discriminant Analysis) as well as a fourth stacked model, which included the Random Forest and Boosting models, and used Random Forest to create the model. 
+
+
+
+
+
+
+
+
 
 
 
 
 ```r
-modelRF$finalModel
+trCtrl <- trainControl(method="repeatedcv", seeds=myseeds)
+
+modelRF <- train(classe ~ ., method="rf", data=train.set, trControl=trCtrl)
+predRF <- predict(modelRF, valid.set)
+
+modelGBM <- train(classe ~ ., method="gbm", data=train.set, verbose=FALSE, trControl=trCtrl)
+predGBM <- predict(modelGBM, valid.set)
+
+modelLDA <- train(classe ~ ., method="lda", data=train.set, trControl=trCtrl)
+predLDA <- predict(modelLDA, valid.set)
+
+predDF <- data.frame(predRF, predGBM, classe=valid.set$classe)
+modStack <- train(classe ~ ., data=predDF, method="rf")
+predStack <- predict(modStack, valid.set)
 ```
 
-```
-## 
-## Call:
-##  randomForest(x = x, y = y, mtry = param$mtry) 
-##                Type of random forest: classification
-##                      Number of trees: 500
-## No. of variables tried at each split: 43
-## 
-##         OOB estimate of  error rate: 0.33%
-## Confusion matrix:
-##      A    B    C    D    E  class.error
-## A 4182    2    0    0    1 0.0007168459
-## B    6 2836    6    0    0 0.0042134831
-## C    0   13 2554    0    0 0.0050642774
-## D    0    0   14 2396    2 0.0066334992
-## E    0    1    0    4 2701 0.0018477458
-```
+### Out of Sample Error Estimate
 
-### Out of Sample Error
+The out of sample error for each model was then estimated by creating a Confusion Matrix using the training validation set. The Stacked Model and Random Forest Model had the lowest, and nearly identical, out of sample errors (see table). Since the Stacked Model had the lowest out of sample error, it will be used as the final model to predict on the testing set.
+
+Model | Out of Sample Error
+------|------------------------------
+Random Forest | 0.53%
+Boosting | 1.65%
+Linear Discriminate Analysis | 29.34%
+Stacked | 0.51%
 
 
 
-
-```r
-cmRF
-```
-
-```
-## Confusion Matrix and Statistics
-## 
-##           Reference
-## Prediction    A    B    C    D    E
-##          A 1393    3    0    0    0
-##          B    2  944    1    0    0
-##          C    0    2  853   11    0
-##          D    0    0    1  789    2
-##          E    0    0    0    4  899
-## 
-## Overall Statistics
-##                                           
-##                Accuracy : 0.9947          
-##                  95% CI : (0.9922, 0.9965)
-##     No Information Rate : 0.2845          
-##     P-Value [Acc > NIR] : < 2.2e-16       
-##                                           
-##                   Kappa : 0.9933          
-##  Mcnemar's Test P-Value : NA              
-## 
-## Statistics by Class:
-## 
-##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            0.9986   0.9947   0.9977   0.9813   0.9978
-## Specificity            0.9991   0.9992   0.9968   0.9993   0.9990
-## Pos Pred Value         0.9979   0.9968   0.9850   0.9962   0.9956
-## Neg Pred Value         0.9994   0.9987   0.9995   0.9964   0.9995
-## Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
-## Detection Rate         0.2841   0.1925   0.1739   0.1609   0.1833
-## Detection Prevalence   0.2847   0.1931   0.1766   0.1615   0.1841
-## Balanced Accuracy      0.9989   0.9970   0.9972   0.9903   0.9984
-```
-
-After applying the model to the validation subset, the out of sample error for the final model using the Random Forest method is estimated at 0.53%
-
-## Predict Testing Set
+## Predict on the Testing Set
 
 The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
 
 
 
 
+```r
+predTest <- predict(modelStack, test.set)
+answer <- as.character(predTest)
+pml_write_files(answer)
+saveRDS(predTest, "test_predictions.Rds")
+```
 
