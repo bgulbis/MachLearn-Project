@@ -245,8 +245,6 @@ Boosting | `r round((1 - cmGBM$overall["Accuracy"]) * 100, 2)`%
 Linear Discriminate Analysis | `r round((1 - cmLDA$overall["Accuracy"]) * 100, 2)`%
 Stacked | `r round((1 - cmStack$overall["Accuracy"]) * 100, 2)`%
 
-
-
 ## Predict on the Testing Set
 
 The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
