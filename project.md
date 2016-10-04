@@ -114,8 +114,6 @@ Boosting | 1.65%
 Linear Discriminate Analysis | 29.34%
 Stacked | 0.51%
 
-
-
 ## Predict on the Testing Set
 
 The final model was then used to predict the manner in which the exercise was performed for the 20 values contained in the test set. 
